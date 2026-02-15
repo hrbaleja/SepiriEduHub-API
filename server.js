@@ -17,9 +17,6 @@ app.set('trust proxy', 1);
 // Connect to MongoDB
 // connectDB();
 
-app.get('/', (req, res) => {
-    res.send('Welcome to my Node.js backend!');
-});
 
 // Security middleware
 app.use(helmet());
@@ -41,6 +38,11 @@ app.use(express.urlencoded({ extended: true }));
 if (config.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
+
+app.get('/', (req, res) => {
+    res.send('Welcome to my Node.js backend!');
+});
+
 
 app.use('/api/v1', apiRoutes);
 
