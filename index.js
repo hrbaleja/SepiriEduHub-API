@@ -7,15 +7,25 @@ const apiRoutes = require('./routes');
 const app = express();
 
 // ===================================
-// CORS Configuration
+// CORS Configuration - ONLY SPECIFIC ORIGIN
 // ===================================
+const ALLOWED_ORIGINS = [
+  'https://sepiri.vercel.app',
+  'http://localhost:3000', // Keep for local development
+  'http://localhost:3001',
+  'http://127.0.0.1:3000'
+];
+
 app.use((req, res, next) => {
-  // Allow all origins in development, specific in production
   const origin = req.headers.origin;
-  res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  // Check if origin is in allowed list
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
   
   // Handle preflight
   if (req.method === 'OPTIONS') {
@@ -25,10 +35,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// Legacy CORS middleware (keep as backup)
+// CORS middleware with origin whitelist
 const corsOptions = {
   origin: function (origin, callback) {
-    callback(null, true); // Allow all origins
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+    
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -83,7 +100,8 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-    cors: 'Enabled'
+    cors: 'Enabled for specific origins only',
+    allowedOrigins: ALLOWED_ORIGINS
   });
 });
 
@@ -95,22 +113,23 @@ app.get('/', (req, res) => {
     message: 'Use /api/health for health check'
   });
 });
+
 app.use('/api/v1', apiRoutes);
-
-// ===================================
-// Minimal Routes (Add your routes here)
-// ===================================
-// Note: For Vercel, you might need to use /api folder structure
-// Move complex routes to separate API folder
-
-// Example: Auth routes would go in /api/auth.js
-// Example: Institutes routes would go in /api/institutes.js
 
 // ===================================
 // Error Handler
 // ===================================
 app.use((err, req, res, next) => {
   console.error('Error:', err);
+  
+  // Handle CORS errors
+  if (err.message === 'Not allowed by CORS') {
+    return res.status(403).json({
+      success: false,
+      error: 'CORS policy: Origin not allowed'
+    });
+  }
+  
   res.status(err.status || 500).json({
     success: false,
     error: err.message || 'Internal server error'
@@ -138,5 +157,6 @@ if (require.main === module) {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🚀 Server running on http://localhost:${PORT}`);
+    console.log(`🔒 CORS allowed origins: ${ALLOWED_ORIGINS.join(', ')}`);
   });
 }
