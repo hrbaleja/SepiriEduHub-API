@@ -9,23 +9,26 @@ const app = express();
 // ===================================
 // CORS Configuration
 // ===================================
+app.use((req, res, next) => {
+  // Allow all origins in development, specific in production
+  const origin = req.headers.origin;
+  res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
+
+// Legacy CORS middleware (keep as backup)
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman)
-    if (!origin) return callback(null, true);
-    
-    // Allow all localhost and local network IPs
-    if (
-      origin.includes('localhost') || 
-      origin.includes('127.0.0.1') ||
-      origin.match(/https?:\/\/192\.168\.\d{1,3}\.\d{1,3}/) ||
-      origin.match(/https?:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}/) ||
-      origin.includes('vercel.app')
-    ) {
-      callback(null, true);
-    } else {
-      callback(null, true); // Allow all in development
-    }
+    callback(null, true); // Allow all origins
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -33,7 +36,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+// app.options('*', cors(corsOptions));
 
 // Body parser
 app.use(express.json({ limit: '10mb' }));
