@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const apiRoutes = require('./routes');
 
 const app = express();
 
@@ -91,6 +92,7 @@ app.get('/', (req, res) => {
     message: 'Use /api/health for health check'
   });
 });
+app.use('/api/v1', apiRoutes);
 
 // ===================================
 // Minimal Routes (Add your routes here)
