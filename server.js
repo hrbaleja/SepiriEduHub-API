@@ -17,7 +17,9 @@ app.set('trust proxy', 1);
 // Connect to MongoDB
 // connectDB();
 
-
+app.get('/', (req, res) => {
+    res.send('Welcome to my Node.js backend!');
+});
 
 // Security middleware
 app.use(helmet());
