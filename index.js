@@ -2,138 +2,163 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const apiRoutes = require('./routes');
+
+
 
 const app = express();
 
 // ===================================
-// CORS Configuration - FIX FOR VERCEL
+// CORS Configuration
 // ===================================
-app.use((req, res, next) => {
-  // Allow all origins in development, specific in production
-  const origin = req.headers.origin;
-  res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  next();
-});
+const ALLOWED_ORIGINS = [
+  'https://sepiri.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173'
+];
 
-// Legacy CORS middleware (keep as backup)
-const corsOptions = {
-  origin: function (origin, callback) {
-    callback(null, true); // Allow all origins
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-};
+  optionsSuccessStatus: 204
+}));
 
-app.use(cors(corsOptions));
-
-// Body parser
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ===================================
-// MongoDB Connection (Cached for Vercel)
+// MongoDB Connection - FIXED FOR VERCEL
 // ===================================
-let cachedDb = null;
+let isConnected = false;
 
-async function connectToDatabase() {
-  if (cachedDb && mongoose.connection.readyState === 1) {
-    return cachedDb;
+async function connectDB() {
+  if (isConnected) {
+    console.log('Using existing MongoDB connection');
+    return;
+  }
+
+  if (!process.env.MONGODB_URI) {
+    console.error('❌ MONGODB_URI not set in environment variables');
+    return;
   }
 
   try {
-    const connection = await mongoose.connect(process.env.MONGODB_URI || '', {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 5000,
+    console.log('🔄 Connecting to MongoDB...');
+    
+    const db = await mongoose.connect(process.env.MONGODB_URI, {
+      bufferCommands: false,
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
     });
     
-    cachedDb = connection;
-    console.log('✅ MongoDB Connected');
-    return cachedDb;
+    isConnected = db.connections[0].readyState === 1;
+    console.log('✅ MongoDB Connected Successfully');
+    
   } catch (error) {
     console.error('❌ MongoDB Connection Error:', error.message);
-    throw error;
+    isConnected = false;
   }
 }
 
-// Connect on startup
-if (process.env.MONGODB_URI) {
-  connectToDatabase().catch(console.error);
-}
-
 // ===================================
-// Health Check
+// Routes
 // ===================================
-app.get('/api/health', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Sepiri EduHub API is running',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-    cors: 'Enabled for all origins'
-  });
+app.get('/api/health', async (req, res) => {
+  try {
+    // Try to connect on each health check
+    await connectDB();
+    
+    res.json({
+      success: true,
+      message: 'Sepiri EduHub API is running',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      database: isConnected ? 'Connected' : 'Disconnected',
+      mongodbState: mongoose.connection.readyState,
+      mongodbUriSet: !!process.env.MONGODB_URI,
+      cors: 'Enabled'
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false, 
+      error: err.message,
+      database: 'Error'
+    });
+  }
 });
 
 app.get('/', (req, res) => {
-  res.json({
-    name: 'Sepiri EduHub API',
-    version: '2.0.0',
+  res.json({ 
+    name: 'Sepiri EduHub API', 
     status: 'running',
-    message: 'Use /api/health for health check'
+    database: isConnected ? 'Connected' : 'Disconnected'
   });
 });
 
-// ===================================
-// Add Your Routes Here
-// ===================================
-app.use('/api/v1', apiRoutes);
-// Example: app.use('/api/auth', require('./routes/auth'));
-// Example: app.use('/api/institutes', require('./routes/institutes'));
+// Middleware to ensure DB connection before routes
+app.use('/api/v1', async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: 'Database connection failed' 
+    });
+  }
+});
 
-// ===================================
-// Error Handler
-// ===================================
+// Load API routes if available
+try {
+  const apiRoutes = require('./routes');
+  app.use('/api/v1', apiRoutes);
+} catch (err) {
+  console.log('⚠️ Routes not loaded:', err.message);
+  app.all('/api/v1/*', (req, res) => {
+    res.status(404).json({ 
+      success: false, 
+      error: 'API routes not configured yet' 
+    });
+  });
+}
+
+// Error handler
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    success: false,
-    error: err.message || 'Internal server error'
+  console.error('Error:', err.message);
+  res.status(500).json({ 
+    success: false, 
+    error: err.message 
   });
 });
 
-// ===================================
-// 404 Handler
-// ===================================
+// 404 handler
 app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Route not found',
-    path: req.path
+  res.status(404).json({ 
+    success: false, 
+    error: 'Not found' 
   });
 });
 
-// ===================================
 // Export for Vercel
-// ===================================
 module.exports = app;
 
-// For local development
+// Local development
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 Server running on http://localhost:${PORT}`);
-    console.log(`🌍 CORS enabled for all origins`);
+  
+  connectDB().then(() => {
+    app.listen(PORT, () => {
+      console.log(`\n🚀 Server: http://localhost:${PORT}`);
+      console.log(`💾 MongoDB: ${isConnected ? 'Connected' : 'Disconnected'}`);
+      console.log(`🌍 CORS: ${ALLOWED_ORIGINS.join(', ')}\n`);
+    });
   });
 }
