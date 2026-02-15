@@ -1,103 +1,69 @@
-process.env.NODE_OPTIONS = "--dns-result-order=ipv4first";
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-const connectDB = require('./config/db');
-const config = require('./config/config');
-const apiRoutes = require('./routes');
-const PORT = process.env.PORT || 5000;
+
+const connectDB = require('../config/db');
+const config = require('../config/config');
+const apiRoutes = require('../routes');
 
 const app = express();
 
+// Trust proxy for Vercel
 app.set('trust proxy', 1);
-// Connect to MongoDB
-// connectDB();
 
+// Connect DB (cached connection recommended)
+connectDB();
 
-// Security middleware
+// Middlewares
 app.use(helmet());
 app.use(cors());
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: config.RATE_LIMIT.WINDOW_MS,
-  max: config.RATE_LIMIT.MAX_REQUESTS,
-  message: 'Too many requests from this IP, please try again later'
-});
-// app.use('/api/', limiter);
-
-// Body parser
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Logging
 if (config.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-app.get('/', (req, res) => {
-    res.send('Welcome to my Node.js backend!');
+// Rate limiter (optional)
+const limiter = rateLimit({
+  windowMs: config.RATE_LIMIT.WINDOW_MS,
+  max: config.RATE_LIMIT.MAX_REQUESTS,
 });
-
-
-app.use('/api/v1', apiRoutes);
-
-// app.use('api/v1', apiRoutes);
-
-// Static files
-app.use('/certificates', express.static(config.PATHS.CERTIFICATES));
+app.use('/api', limiter);
 
 // Routes
+app.get('/', (req, res) => {
+  res.send('Welcome to Sepiri EduHub API');
+});
 
+app.use('/api/v1', apiRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
-    message: 'Sepiri EduHub API is running',
-    timestamp: new Date().toISOString(),
+    message: 'API is running',
     environment: config.NODE_ENV,
-    database: 'MongoDB Connected'
+    timestamp: new Date().toISOString()
   });
 });
 
-// 404 handler
+// 404
 app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Route not found'
-  });
+  res.status(404).json({ success: false, error: 'Route not found' });
 });
 
 // Error handler
 app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(err.status || 500).json({
+  console.error(err);
+  res.status(500).json({
     success: false,
-    error: err.message || 'Internal server error',
-    ...(config.NODE_ENV === 'development' && { stack: err.stack })
+    error: err.message || 'Internal server error'
   });
 });
 
-// Start server
-const startServer = async () => {
-  await connectDB();
-
-  app.listen(PORT, () => {
-    console.log('\n╔════════════════════════════════════════════════════════╗');
-    console.log('║   📜 Sepiri EduHub - Production Certificate System    ║');
-    console.log('╚════════════════════════════════════════════════════════╝');
-    console.log(`\n🚀 Server: http://localhost:${PORT}`);
-    console.log(`🌍 Environment: ${config.NODE_ENV}`);
-    console.log(`✨ Ready to generate certificates!\n`);
-  });
-};
-
-startServer();
-
-
+// 🔥 EXPORT ONLY (NO LISTEN)
 module.exports = app;
