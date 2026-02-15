@@ -1,17 +1,21 @@
-const { v4: uuidv4 } = require('uuid');
+// Fixed version - No ES Module import needed
+// Use crypto instead of uuid for Vercel compatibility
+
+const crypto = require('crypto');
 
 class SerialNumberGenerator {
   /**
-   * Generate unique certificate serial number
-   * Format: SE-[PROGRAM]-YYYYMM-XXXXXXXX
-   * @param {string} programCode - Program code (MCX, BSE, etc.)
-   * @returns {string} Serial number
+   * Generate serial number: SE-MCX-202402-ABC12345
+   * @param {string} programCode - Program code (e.g., 'MCX', 'BSE')
+   * @returns {string} - Generated serial number
    */
   static generate(programCode) {
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
-    const uniqueId = uuidv4().split('-')[0].toUpperCase();
+    
+    // Generate unique ID using crypto (built-in, no external package)
+    const uniqueId = crypto.randomBytes(4).toString('hex').toUpperCase();
     
     return `SE-${programCode}-${year}${month}-${uniqueId}`;
   }
@@ -22,24 +26,32 @@ class SerialNumberGenerator {
    * @returns {boolean}
    */
   static validate(serialNumber) {
-    const pattern = /^SE-[A-Z]{2,5}-\d{6}-[A-F0-9]{8}$/;
+    const pattern = /^SE-[A-Z]{3,5}-\d{6}-[A-F0-9]{8}$/;
     return pattern.test(serialNumber);
   }
 
   /**
-   * Parse serial number to get components
+   * Parse serial number
    * @param {string} serialNumber 
-   * @returns {object|null}
+   * @returns {object}
    */
   static parse(serialNumber) {
-    if (!this.validate(serialNumber)) return null;
-    
     const parts = serialNumber.split('-');
+    if (parts.length !== 4) {
+      throw new Error('Invalid serial number format');
+    }
+
+    const [prefix, programCode, dateCode, uniqueId] = parts;
+    const year = dateCode.substring(0, 4);
+    const month = dateCode.substring(4, 6);
+
     return {
-      prefix: parts[0],
-      programCode: parts[1],
-      yearMonth: parts[2],
-      uniqueId: parts[3]
+      prefix,
+      programCode,
+      year: parseInt(year),
+      month: parseInt(month),
+      uniqueId,
+      isValid: this.validate(serialNumber)
     };
   }
 }
